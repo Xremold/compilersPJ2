@@ -29,18 +29,14 @@ def assert_print(a, b="Error!"):
 
 def torch_gemm(A, B, *arg):
     '''Interface of gemm function in pytorch
-
         Args:
         -----------------------------
         A, B : torch.tensor
             args for gemm function in pytorch
-
         *arg : just for uniform interface
         -----------------------------
-
         Returns:
         -----------------------------
-
         torch.tensor
         -----------------------------
         '''
@@ -49,16 +45,13 @@ def torch_gemm(A, B, *arg):
 
 def torch_conv2d(inputs, weight, bias=None, stride=1, padding=0, dilation=1, groups=1):
     '''Interface of torch.nn.functional.conv2d
-
     Args:
     -----------------------------
     inputs, weight, bias : torch.tensor
         first three args for torch.nn.functional.conv2d
     -----------------------------
-
     Returns:
     -----------------------------
-
     torch.tensor
     -----------------------------
     '''
@@ -67,7 +60,6 @@ def torch_conv2d(inputs, weight, bias=None, stride=1, padding=0, dilation=1, gro
 
 def zero_pad2d(inputs, padding=0):
     """Zero padding for 2d tensor
-
     Args:
     -----------------------------
     inputs : tvm.tensor.Tensor
@@ -75,7 +67,6 @@ def zero_pad2d(inputs, padding=0):
     padding: (optional:0) int or tuple
         expected: (h_pad_up, h_pad_down, w_pad_up, w_pad_down)
     -----------------------------
-
     Returns:
     -----------------------------
     tvm.tensor.Tensor
@@ -108,7 +99,6 @@ def zero_pad2d(inputs, padding=0):
 
 def batch_gemm(batch, height, width, length, transposeA=False, transposeB=False, dtype="float32"):
     """Matrix multiplies matrix
-
     Args:
     -----------------------------
     batch, height, width, length : int
@@ -117,16 +107,12 @@ def batch_gemm(batch, height, width, length, transposeA=False, transposeB=False,
                 shape [batch, height, width]
             B: tvm.tensor.Tensor
                 shape [batch, width, length]
-
     transposeA: (optional:False) bool
-
     transposeB: (optional:False) bool
     -----------------------------
-
     Returns:
     -----------------------------
     list [tvm.tensor.Tensor.op]
-
     list of bufs:
         shape [A, B, C]
     -----------------------------
@@ -167,37 +153,27 @@ def batch_gemm(batch, height, width, length, transposeA=False, transposeB=False,
 
 def conv2d_nchw(batch_size, in_channel, inputs_height, inputs_width, out_channel, channel_per_group, kernel_height, kernel_width, if_bias=0, stride=1, padding=0, dilation=1, groups=1, dtype="float32"):
     """Convolution 2d NCHW layout
-
     Args:
     -----------------------------
     batch_size, in_channel, inputs_height, inputs_width          : int
         shape of inputs
             inputs  : tvm.tensor.Tensor
                 shape [batch, channel, height, width]
-
     out_channel, channel_per_group, kernel_height, kernel_width  : int
         shape of weight
             weight  : tvm.tensor.Tensor
                 shape [out_channel, channel // groups, kernel_height, kernel_width]
-
     if_bias : (optional:0) bool
         bias  : tvm.tensor.Tensor
             shape [out_channel]
-
     stride  : (optional:1) int or tuple
-
     padding : (optional:0) int or tuple
-
     dilation: (optional:1) int
-
     groups  : (optional:1) int
     -----------------------------
-
     Returns:
     -----------------------------
-
     list:[tvm.tensor.Tensor.op] 
-
     list of bufs:
         [inputs, weight, bias, Output] if if_bias
         [inputs, weight, Output] otherwise
@@ -253,25 +229,17 @@ def conv2d_nchw(batch_size, in_channel, inputs_height, inputs_width, out_channel
 
 def build_and_run(s, tensors, control_f, shape, time_count, count=10, device_id=0, target="llvm", timeout=10.0):
     """ Build and record the time of running.
-
         Args:
         -----------------------------
         s: schedule.Schedule get form the student's auto_schedule
-
         tensors  (list)
         the input tensors and the output tensor
-
         control_f  the torch function
-
         shape 
-
         time_count: used for record the running time
-
         count: the number rounds repeat testing
-
         device_id : the id of CPU
         -----------------------------
-
         Returns:
         -----------------------------
         [tvm_time, torch_time]:
@@ -364,20 +332,15 @@ def build_and_run(s, tensors, control_f, shape, time_count, count=10, device_id=
 
 def _auto_schedule(auto_schedule_func, func, shape, queue, timeout=20 * 60):
     '''Interface of auto_schedule
-
         Args:
         -----------------------------
         auto_schedule_func : auto_schedule function
-
         func    : conv2d_nchw or gemm
-
         shape   : args for auto_schedule
         -----------------------------
-
         Returns:
         -----------------------------
         list:[tvm.tensor.Tensor.op] 
-
         list of bufs in func
         -----------------------------
         '''
@@ -401,36 +364,25 @@ def _auto_schedule(auto_schedule_func, func, shape, queue, timeout=20 * 60):
 
 def _evaluate(torch_func, func, shape, time_count, target="llvm", dev_id=0, times=10, timeout_create=20 * 60, timeout_cal=10.0):
     '''evaluating auto_schedule in special shape
-
         Args:
         -----------------------------
         torch_func  :  torch_conv2d or torch_gemm
             interface of torch function
-
         auto_schedule: function from student 
-
         func        : conv2d_nchw or gemm
-
         shape       : list
             args for func
-
         target      : string
-
         dev_id      : int
-
         times       : int
             times of calculating in Build_and_Run
-
         timeout_create  : (optional: 10.0) float
             time limit in creating schedule
-
         timeout_cal     : (optional: 10.0) float
             time limit in calculating
-
         time_count  : Queue
             for testing result transferring
         -----------------------------
-
         Returns:
         -----------------------------
         '''
@@ -456,33 +408,23 @@ def _evaluate(torch_func, func, shape, time_count, target="llvm", dev_id=0, time
 
 def evaluate(torch_func, func, shape, target="llvm", dev_id=0, timeout_create=20 * 60, timeout_cal=10.0, times=10):
     '''evaluating auto_schedule with a single shape
-
         Args:
         -----------------------------
         torch_func      :  torch_conv2d or torch_gemm
             interface of torch function
-
         func            : conv2d_nchw or gemm
-
         shape           : a single shape
             args for func
-
         target          : string
-
         dev_id          : (optional: 0) int
-
         timeout_create  : (optional: 10.0) float
             time limit in creating schedule
-
         timeout_cal     : (optional: 10.0) float
             time limit in calculating
-
         times           : (optional: 10) int
             times of calculating in Build_and_Run
-
         max_proc_num    : (optional: 4) int
         -----------------------------
-
         Returns:
         -----------------------------
         list    : [auto_time,torch_time] for each shape
@@ -568,7 +510,6 @@ class NewPool(pool.Pool):
 
 def parallel_evaluate(parallel=1):
     """evaluate process
-
     student level : synchro
     operator level : synchro
     shape level : asynchro
@@ -576,7 +517,7 @@ def parallel_evaluate(parallel=1):
     # dir preparation
     res_file = 'project2_score.txt'
     res_path = res_file
-    time_create = 10.0 # 20 * 60
+    time_create = 20 * 60
     time_cal = 10.0
     number_test = 10
 
@@ -678,7 +619,6 @@ def parallel_evaluate(parallel=1):
 
 def write_score(res_file, score_list, score_item, prob_error=''):
     """write score into result file
-
     Parameters
     ----------
     student_id: str
@@ -690,7 +630,6 @@ def write_score(res_file, score_list, score_item, prob_error=''):
         test names
     prob_error: str
         exceptions and errors occurring during tests
-
     Returns
     -------
     """
@@ -708,12 +647,10 @@ def write_score(res_file, score_list, score_item, prob_error=''):
 
 def score_calculate(time_tuple):
     """scores based on look-up table
-
     Parameters
     ----------
     time_tuple: list
         with format [auto_time, torch_time]
-
     Returns
     -------
     case_score: float

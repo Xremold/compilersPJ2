@@ -81,20 +81,30 @@ def auto_schedule(func, args):
         ocSplitFactor = 8
         xSplitFactor = 4
         ySplitFactor = 4
-        icSplitFactor = 8
+        icSplitFactor = 16
 
-        com_operation = s.stages[3] # buggy
-        print(com_operation.op.reduce_axis, com_operation.op.axis, sep="####")
+        com_operation3 = s.stages[3] # buggy
+        print(com_operation3.op.reduce_axis, com_operation3.op.axis, sep="####")
 
         # oc:out-channel, x:image-height, y:image-width, ic;in-channel, kh:kernel-height, kw:kernel-width
-        oco, oci = com_operation.split(com_operation.op.axis[1], factor=ocSplitFactor)
-        xo, yo, xi, yi = com_operation.tile(com_operation.op.axis[2], com_operation.op.axis[3], x_factor=xSplitFactor, y_factor=ySplitFactor)
+        oco, oci = com_operation3.split(com_operation3.op.axis[1], factor=ocSplitFactor)
+        xo, yo, xi, yi = com_operation3.tile(com_operation3.op.axis[2], com_operation3.op.axis[3], x_factor=xSplitFactor, y_factor=ySplitFactor)
         
-        ic, kh, kw = com_operation.op.reduce_axis
-        ico, ici = com_operation.split(ic, factor=icSplitFactor)
-        com_operation.reorder(oco, ico, xo, yo, oci, ici, xi, yi)
+        ic, kh, kw = com_operation3.op.reduce_axis
+        ico, ici = com_operation3.split(ic, factor=icSplitFactor)
+        com_operation3.reorder(oco, ico, xo, yo, oci, ici, xi, yi)
+        # k = com_operation3.fuse(kh, kw)
+        # com_operation3.unroll(k)
 
-        # print(tvm.lower(s, bufs, simple_mode=True))
+        # com_operation1 = s.stages[1]
+        # com_operation1.compute_at(com_operation3, yi)
+
+        if len(s.stages) >= 6:
+            com_operation5 = s.stages[5]
+            xo, yo, xi, yi = com_operation5.tile(com_operation5.op.axis[2], com_operation5.op.axis[3], x_factor=xSplitFactor, y_factor=ySplitFactor)
+            com_operation5.reorder(xo, yo, xi, yi)
+
+        print(tvm.lower(s, bufs, simple_mode=True))
         return s, bufs
 
     

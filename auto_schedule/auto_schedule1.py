@@ -65,8 +65,8 @@ def CONVAutoTVM(*args):
     com_operation3.reorder(oco, ico, xo, yo, oci, ici, xi, yi)
 
     # for stage 1
-    # com_operation1 = s.stages[1]
-    # com_operation1.comput_inline()
+    com_operation1 = s.stages[1]
+    com_operation1.comput_inline()
 
 
     # for stage 5 optional
