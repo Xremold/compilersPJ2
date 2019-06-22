@@ -25,10 +25,9 @@ def auto_schedule(func, args):
     # to analyze which schedule is appropriate
     
     s = tvm.create_schedule(ops)
-    com_tensor = bufs[len(bufs) - 1]
 
     # GEMM!
-    if len(com_tensor.op.axis) == 3:
+    if len(args) == 4:
 
         # for i in range(0, len(s.stages)):
         #     print(type(s.stages[i]), s.stages[i])
@@ -41,36 +40,29 @@ def auto_schedule(func, args):
         #    32, 8(16), 8 : 4.9
         #    32, 32, 8 : 5.6
         
-        xSplitFactor = 32
-        ySplitFactor = 32
+        xSplitFactor = 2
+        ySplitFactor = 4
         kSplitFactor = 8
 
-        com_operation2 = s.stages[2]
+        gemm_tensor = bufs[len(bufs) - 1]
+        print(gemm_tensor.op.input_tensors)
+        gemm_op = s[gemm_tensor]
 
-        xo, yo, xi, yi = com_operation2.tile(com_operation2.op.axis[1], com_operation2.op.axis[2], x_factor=xSplitFactor, y_factor=ySplitFactor)
-        k, = com_operation2.op.reduce_axis
-        ko, ki = com_operation2.split(k, factor=kSplitFactor)
-        com_operation2.reorder(xo, ko, yo, xi, ki, yi)
+        gemm_op = s.stages[2]
+
+        xo, yo, xi, yi = gemm_op.tile(gemm_op.op.axis[1], gemm_op.op.axis[2], x_factor=xSplitFactor, y_factor=ySplitFactor)
+        k, = gemm_op.op.reduce_axis
+        ko, ki = gemm_op.split(k, factor=kSplitFactor)
+        gemm_op.reorder(xo, ko, yo, xi, ki, yi)
         # com_operation2.unroll(yi)
 
-        # CC = s.cache_write(com_tensor, 'global')
-        # xo, yo, xi, yi = s[com_tensor].tile(com_tensor.op.axis[1], com_tensor.op.axis[2], x_factor=xSplitFactor, y_factor=ySplitFactor)
-
-        # s[CC].compute_at(s[com_tensor], yo)
-        # # print(s[CC].op.axis)
-        # _, xc, yc = s[CC].op.axis
-
-        # k, = s[CC].op.reduce_axis
-        # ko, ki = s[CC].split(k, factor=4)
-        # s[CC].reorder(ko, xc, ki, yc)
-        # s[CC].unroll(ki)
-
         print(tvm.lower(s, bufs, simple_mode=True))
+        return s,bufs
 
     
     # CONV_2D!
-    elif len(com_tensor.op.axis) == 4:
-        # TODO
+    else:
+        # return s, bufs
         # every stage stands for a part of the computation.
 
 
@@ -78,42 +70,45 @@ def auto_schedule(func, args):
         # for (1, 1024, 7, 7, 1024, 1024, 3, 3, 0, 1, 1, 1, 1): 8,4,4,8
         # for (4, 112, 14, 14, 224, 112, 3, 3, 0, 1, 1, 2, 1): 8,4,4,8
         # for (8, 384, 27, 27, 64, 384, 1, 1, 1, 1, 0, 1, 1): 4,4,4,8
-        ocSplitFactor = 8
-        xSplitFactor = 4
-        ySplitFactor = 4
-        icSplitFactor = 16
+        bias_tensor = None
+        conv_tensor = None
+        pad_tensor = None
 
-        com_operation3 = s.stages[3] # buggy
-        print(com_operation3.op.reduce_axis, com_operation3.op.axis, sep="####")
+        conv_tensor = bufs[len(bufs) - 1]
+        in_tensor2 = conv_tensor.op.input_tensors[1]
+        in_tensor1 = conv_tensor.op.input_tensors[0]
+        if in_tensor2.op.name == "bias":
+            bias_tensor = conv_tensor
+            conv_tensor = in_tensor1
+
+        in_tensor1 = conv_tensor.op.input_tensors[0]
+        pad_tensor = in_tensor1
+
+        if bias_tensor != None:
+            bias_op = s[bias_tensor]
+        conv_op = s[conv_tensor]
+        pad_op = s[pad_tensor]
+
+        ocSplitFactor = 8
+        xSplitFactor = 2
+        ySplitFactor = 2
+        icSplitFactor = 8
+
+        print(conv_op.op.reduce_axis, conv_op.op.axis, sep="####")
 
         # oc:out-channel, x:image-height, y:image-width, ic;in-channel, kh:kernel-height, kw:kernel-width
-        oco, oci = com_operation3.split(com_operation3.op.axis[1], factor=ocSplitFactor)
-        xo, yo, xi, yi = com_operation3.tile(com_operation3.op.axis[2], com_operation3.op.axis[3], x_factor=xSplitFactor, y_factor=ySplitFactor)
+        oco, oci = conv_op.split(conv_op.op.axis[1], factor=ocSplitFactor)
+        xo, yo, xi, yi = conv_op.tile(conv_op.op.axis[2], conv_op.op.axis[3], x_factor=xSplitFactor, y_factor=ySplitFactor)
         
-        ic, kh, kw = com_operation3.op.reduce_axis
-        ico, ici = com_operation3.split(ic, factor=icSplitFactor)
-        com_operation3.reorder(oco, ico, xo, yo, oci, ici, xi, yi)
-        # k = com_operation3.fuse(kh, kw)
-        # com_operation3.unroll(k)
+        ic, kh, kw = conv_op.op.reduce_axis
+        ico, ici = conv_op.split(ic, factor=icSplitFactor)
+        conv_op.reorder(oco, ico, xo, yo, oci, ici, kh, kw, xi, yi)
 
-        # com_operation1 = s.stages[1]
-        # com_operation1.compute_at(com_operation3, yi)
-
-        if len(s.stages) >= 6:
-            com_operation5 = s.stages[5]
-            xo, yo, xi, yi = com_operation5.tile(com_operation5.op.axis[2], com_operation5.op.axis[3], x_factor=xSplitFactor, y_factor=ySplitFactor)
-            com_operation5.reorder(xo, yo, xi, yi)
+        if bias_tensor != None:
+            xo, yo, xi, yi = bias_op.tile(bias_op.op.axis[2], bias_op.op.axis[3], x_factor=8, y_factor=8)
+            bias_op.reorder(xo, yo, xi, yi)
+        
+        pad_op.compute_inline()
 
         print(tvm.lower(s, bufs, simple_mode=True))
         return s, bufs
-
-    
-    #################################################
-    # perform real schedule according to 
-    # decisions made above, using primitives 
-    # such as split, reorder, parallel, unroll...
-    
-    #################################################
-    # finally, remember to return these two results
-    # we need `bufs` to build function via `tvm.build`
-    return s, bufs

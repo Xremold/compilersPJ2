@@ -9,67 +9,104 @@ function = None
 @autotvm.template 
 def GEMMAutoTVM(*args):
     global function
+    def getSplit(maxNum):
+        splitList = []
+        para = 2
+        while (True):
+            if para <= maxNum / 2 and para <= 32:
+                splitList.append(para)
+                para *= 2
+            else:
+                break
+        if len(splitList) == 0:
+            splitList.append(1)
+        return splitList
     
     ops, bufs = function(*args)
     s = tvm.create_schedule(ops)
-    com_operation2 = s.stages[2]
+    gemm_tensor = bufs[len(bufs) - 1]
+    gemm_op = s[gemm_tensor]
 
-    x = com_operation2.op.axis[1]
-    y = com_operation2.op.axis[2]
-    k = com_operation2.op.reduce_axis[0]
+    x = gemm_op.op.axis[1]
+    y = gemm_op.op.axis[2]
+    k = gemm_op.op.reduce_axis[0]
 
     cfg = autotvm.get_config()
-    cfg.define_knob("split_y", [4, 8, 32])
-    cfg.define_knob("split_x", [4, 8, 32])
-    cfg.define_knob("split_k", [4, 8])
+    # print(alist)
+    cfg.define_knob("split_y", getSplit(int(x.dom.extent)))
+    cfg.define_knob("split_x", getSplit(int(y.dom.extent)))
+    cfg.define_knob("split_k", getSplit(int(k.dom.extent)))
+    # print("heiheihei")
 
-    xo, xi = com_operation2.split(x, cfg["split_x"].val)
-    yo, yi = com_operation2.split(y, cfg["split_y"].val)
-    ko, ki = com_operation2.split(k, cfg["split_k"].val)
-    cfg.define_annotate("yi_unroll", [yi], policy='try_unroll')
-    # yio, yii = com_operation2.split(yi, factor=4)
-    # com_operation2.unroll(yi)
-    com_operation2.reorder(xo, ko, yo, xi, ki, yi)
+    xo, xi = gemm_op.split(x, cfg["split_x"].val)
+    yo, yi = gemm_op.split(y, cfg["split_y"].val)
+    ko, ki = gemm_op.split(k, cfg["split_k"].val)
+    gemm_op.reorder(xo, ko, yo, xi, ki, yi)
+    # cfg.define_annotate("yi_unroll", [yi], policy='try_unroll')
+    # yio, yii = gemm_op.split(yi, factor=4)
+    # gemm_op.unroll(yi)
     
     return s, bufs
 
 @autotvm.template 
 def CONVAutoTVM(*args):
     global function
+    def getSplit(maxNum):
+        splitList = []
+        para = 2
+        while (True):
+            if para < maxNum / 4 and para <= 32:
+                splitList.append(para)
+                para *= 2
+            else:
+                break
+        if len(splitList) == 0:
+            splitList.append(1)
+        return splitList
     
     ops, bufs = function(*args)
     s = tvm.create_schedule(ops)
 
-    com_operation3 = s.stages[3]
+    # get bias_tensor, conv_tensor, pad_tensor and their ops relatively
+    bias_tensor = None
+    conv_tensor = None
+    pad_tensor = None
+    conv_tensor = bufs[len(bufs) - 1]
+    in_tensor2 = conv_tensor.op.input_tensors[1]
+    in_tensor1 = conv_tensor.op.input_tensors[0]
+    if in_tensor2.op.name == "bias":
+        bias_tensor = conv_tensor
+        conv_tensor = in_tensor1
+    in_tensor1 = conv_tensor.op.input_tensors[0]
+    pad_tensor = in_tensor1
+    if bias_tensor != None:
+        bias_op = s[bias_tensor]
+    conv_op = s[conv_tensor]
+    pad_op = s[pad_tensor]
 
-    oc = com_operation3.op.axis[1]
-    x = com_operation3.op.axis[2]
-    y = com_operation3.op.axis[3]
-    ic = com_operation3.op.reduce_axis[0]
-    kh = com_operation3.op.reduce_axis[1]
-    kw = com_operation3.op.reduce_axis[2]
+
+    oc = conv_op.op.axis[1]
+    x = conv_op.op.axis[2]
+    y = conv_op.op.axis[3]
+    ic = conv_op.op.reduce_axis[0]
+    kh = conv_op.op.reduce_axis[1]
+    kw = conv_op.op.reduce_axis[2]
 
     cfg = autotvm.get_config()
-    cfg.define_knob("split_oc", [4, 8, 32])
-    cfg.define_knob("split_x", [4, 8, 32])
-    cfg.define_knob("split_y", [4, 8, 32])
-    cfg.define_knob("split_ic", [4, 8, 32])
+    cfg.define_knob("split_oc", getSplit(int(oc.dom.extent)))
+    cfg.define_knob("split_x", getSplit(int(x.dom.extent)))
+    cfg.define_knob("split_y", getSplit(int(y.dom.extent)))
+    cfg.define_knob("split_ic", getSplit(int(ic.dom.extent)))
 
-    oco, oci = com_operation3.split(oc, cfg["split_oc"].val)
-    xo, xi = com_operation3.split(x, cfg["split_x"].val)
-    yo, yi = com_operation3.split(y, cfg["split_y"].val)
-    ico, ici = com_operation3.split(ic, cfg["split_ic"].val)
-    # cfg.define_annotate("yi_unroll", [yi], policy='try_unroll')
-    # yio, yii = com_operation2.split(yi, factor=4)
-    # com_operation2.unroll(yi)
-    com_operation3.reorder(oco, ico, xo, yo, oci, ici, xi, yi)
+    oco, oci = conv_op.split(oc, cfg["split_oc"].val)
+    xo, xi = conv_op.split(x, cfg["split_x"].val)
+    yo, yi = conv_op.split(y, cfg["split_y"].val)
+    ico, ici = conv_op.split(ic, cfg["split_ic"].val)
+    conv_op.reorder(oco, ico, xo, yo, oci, ici, kh, kw, xi, yi)
+    cfg.define_annotate("yi_unroll", [yi], policy='try_unroll')
+    
+    pad_op.compute_inline()
 
-    # for stage 1
-    # com_operation1 = s.stages[1]
-    # com_operation1.comput_inline()
-
-
-    # for stage 5 optional
     return s, bufs
 
 def auto_schedule(func, args):
@@ -86,8 +123,6 @@ def auto_schedule(func, args):
     s: tvm.schedule.Schedule
     bufs: list of tvm.tensor.Tensor
     """
-    global function
-    function = func
 
     # ops, bufs = func(*args)
     # s = tvm.create_schedule(ops)
@@ -100,15 +135,20 @@ def auto_schedule(func, args):
     #     print("origin_op: ", type(item.origin_op), origin_op)
     #     print()
 
+    global function
+    function = func
+    logFile = open("matmul.log", 'w', encoding="utf-8")
+    logFile.truncate()
+    logFile.close()
     
     # return s, bnfs
     autotvmFunc = None
     config_sp_size = 0
     if len(args) == 4:
-        config_sp_size = 36
+        config_sp_size = 50
         autotvmFunc = GEMMAutoTVM
     else:
-        config_sp_size = 81
+        config_sp_size = 100
         autotvmFunc = CONVAutoTVM
 
 
@@ -127,7 +167,7 @@ def auto_schedule(func, args):
         runner=autotvm.LocalRunner(number=3))
     
     # begin tuning, log records to file `matmul.log`
-    tuner = autotvm.tuner.GridSearchTuner(task)
+    tuner = autotvm.tuner.GATuner(task)
     tuner.tune(n_trial=config_sp_size,
                measure_option=measure_option,
                callbacks=[autotvm.callback.log_to_file('matmul.log')])
