@@ -90,9 +90,9 @@ def auto_schedule(func, args):
         pad_op = s[pad_tensor]
 
         ocSplitFactor = 8
-        xSplitFactor = 2
-        ySplitFactor = 2
-        icSplitFactor = 8
+        xSplitFactor = 1
+        ySplitFactor = 1
+        icSplitFactor = 1
 
         print(conv_op.op.reduce_axis, conv_op.op.axis, sep="####")
 
@@ -102,13 +102,20 @@ def auto_schedule(func, args):
         
         ic, kh, kw = conv_op.op.reduce_axis
         ico, ici = conv_op.split(ic, factor=icSplitFactor)
-        conv_op.reorder(oco, ico, xo, yo, oci, ici, kh, kw, xi, yi)
+        conv_op.reorder(oco, ico, xo, yo, oci, ici, xi, yi)
 
         if bias_tensor != None:
             xo, yo, xi, yi = bias_op.tile(bias_op.op.axis[2], bias_op.op.axis[3], x_factor=8, y_factor=8)
             bias_op.reorder(xo, yo, xi, yi)
-        
-        pad_op.compute_inline()
+       
+        # pad_op.compute_inline()
+        pad_x = pad_op.op.axis[2]
+        pad_y = pad_op.op.axis[3]
+        pad_c = pad_op.op.axis[1]
+        pad_co, pad_ci = pad_op.split(pad_c, 1)
+        pad_xo, pad_xi = pad_op.split(pad_x, 4)
+        pad_yo, pad_yi = pad_op.split(pad_y, 4)
+        pad_op.reorder(pad_co, pad_xo, pad_yo, pad_ci, pad_xi, pad_yi)
 
         print(tvm.lower(s, bufs, simple_mode=True))
         return s, bufs

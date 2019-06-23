@@ -11,6 +11,7 @@ def GEMMAutoTVM(*args):
     global function
     def getSplit(maxNum):
         splitList = []
+        splitList.append(1)
         para = 2
         while (True):
             if para <= maxNum / 2 and para <= 32:
@@ -18,8 +19,6 @@ def GEMMAutoTVM(*args):
                 para *= 2
             else:
                 break
-        if len(splitList) == 0:
-            splitList.append(1)
         return splitList
     
     ops, bufs = function(*args)
@@ -53,15 +52,14 @@ def CONVAutoTVM(*args):
     global function
     def getSplit(maxNum):
         splitList = []
+        splitList.append(1)
         para = 2
         while (True):
-            if para < maxNum / 4 and para <= 32:
+            if para <= maxNum / 2 and para <= 32:
                 splitList.append(para)
                 para *= 2
             else:
                 break
-        if len(splitList) == 0:
-            splitList.append(1)
         return splitList
     
     ops, bufs = function(*args)
@@ -84,7 +82,7 @@ def CONVAutoTVM(*args):
     conv_op = s[conv_tensor]
     pad_op = s[pad_tensor]
 
-
+    # conv!
     oc = conv_op.op.axis[1]
     x = conv_op.op.axis[2]
     y = conv_op.op.axis[3]
@@ -102,10 +100,37 @@ def CONVAutoTVM(*args):
     xo, xi = conv_op.split(x, cfg["split_x"].val)
     yo, yi = conv_op.split(y, cfg["split_y"].val)
     ico, ici = conv_op.split(ic, cfg["split_ic"].val)
-    conv_op.reorder(oco, ico, xo, yo, oci, ici, kh, kw, xi, yi)
-    cfg.define_annotate("yi_unroll", [yi], policy='try_unroll')
+    conv_op.reorder(oco, ico, xo, yo, oci, ici, xi, yi)
+
+    # pad!
+    pad_x = pad_op.op.axis[2]
+    pad_y = pad_op.op.axis[3]
+    pad_c = pad_op.op.axis[1]
+    cfg.define_knob("split_pad_c", getSplit(int(pad_c.dom.extent)))
+    cfg.define_knob("split_pad_x", getSplit(int(pad_x.dom.extent)))
+    cfg.define_knob("split_pad_y", getSplit(int(pad_y.dom.extent)))
+    pad_co, pad_ci = pad_op.split(pad_c, cfg["split_pad_c"].val)
+    pad_xo, pad_xi = pad_op.split(pad_x, cfg["split_pad_x"].val)
+    pad_yo, pad_yi = pad_op.split(pad_y, cfg["split_pad_y"].val)
+    pad_op.reorder(pad_co, pad_xo, pad_yo, pad_ci, pad_xi, pad_yi)
+
+    # bias
+    if bias_tensor == None:
+        return s, bufs
+    bias_x = bias_op.op.axis[2]
+    bias_y = bias_op.op.axis[3]
+    bias_c = bias_op.op.axis[1]
+    cfg.define_knob("split_bias_c", getSplit(int(bias_c.dom.extent)))
+    cfg.define_knob("split_bias_x", getSplit(int(bias_x.dom.extent)))
+    cfg.define_knob("split_bias_y", getSplit(int(bias_y.dom.extent)))
+    bias_co, bias_ci = bias_op.split(bias_c, cfg["split_bias_c"].val)
+    bias_xo, bias_xi = bias_op.split(bias_x, cfg["split_bias_x"].val)
+    bias_yo, bias_yi = bias_op.split(bias_y, cfg["split_bias_y"].val)
+    bias_op.reorder(bias_co, bias_xo, bias_yo, bias_ci, bias_xi, bias_yi)
     
-    pad_op.compute_inline()
+    # cfg.define_annotate("yi_unroll", [yi], policy='try_unroll')
+    
+    # pad_op.compute_inline() # too bad!
 
     return s, bufs
 
@@ -145,10 +170,10 @@ def auto_schedule(func, args):
     autotvmFunc = None
     config_sp_size = 0
     if len(args) == 4:
-        config_sp_size = 50
+        config_sp_size = 100
         autotvmFunc = GEMMAutoTVM
     else:
-        config_sp_size = 100
+        config_sp_size = 200
         autotvmFunc = CONVAutoTVM
 
 
