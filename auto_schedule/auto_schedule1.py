@@ -5,6 +5,8 @@ import numpy as np
 import sys
 
 function = None
+global_s = None
+global_bufs = None
 
 @autotvm.template 
 def GEMMAutoTVM(*args):
@@ -31,11 +33,10 @@ def GEMMAutoTVM(*args):
     k = gemm_op.op.reduce_axis[0]
 
     cfg = autotvm.get_config()
-    # print(alist)
+
     cfg.define_knob("split_y", getSplit(int(x.dom.extent)))
     cfg.define_knob("split_x", getSplit(int(y.dom.extent)))
     cfg.define_knob("split_k", getSplit(int(k.dom.extent)))
-    # print("heiheihei")
 
     xo, xi = gemm_op.split(x, cfg["split_x"].val)
     yo, yi = gemm_op.split(y, cfg["split_y"].val)
@@ -134,65 +135,22 @@ def CONVAutoTVM(*args):
 
     return s, bufs
 
-def auto_schedule(func, args):
-    """Automatic scheduler
-    
-    Args:
-    -----------------
-    func: function object
-        similar to batch_gemm function mentioned above
-    args: tuple
-        inputs to func
-    -----------------
-    Returns:
-    s: tvm.schedule.Schedule
-    bufs: list of tvm.tensor.Tensor
-    """
-
-    # ops, bufs = func(*args)
-    # s = tvm.create_schedule(ops)
-    # print(len(s.stages))
-    # for item in s.stages:
-    #     print(item)
-    #     print(dir(item))
-    #     print("num_child_stages: ", item.num_child_stages)
-    #     print("op: ", type(item.op), item.op)
-    #     print("origin_op: ", type(item.origin_op), origin_op)
-    #     print()
-
-    global function
-    function = func
+def auto_schedule_gemm(func, args):
     logFile = open("matmul.log", 'w', encoding="utf-8")
     logFile.truncate()
     logFile.close()
-    
-    # return s, bnfs
-    autotvmFunc = None
-    config_sp_size = 0
-    if len(args) == 4:
-        config_sp_size = 100
-        autotvmFunc = GEMMAutoTVM
-    else:
-        config_sp_size = 200
-        autotvmFunc = CONVAutoTVM
-
+    config_sp_size = 100
+    autotvmFunc = GEMMAutoTVM
 
     task = autotvm.task.create(autotvmFunc, args=(args), target='llvm')
     print(task.config_space)
     
-    # print log
-    # logging.getLogger('autotvm').setLevel(logging.DEBUG)
-    # logging.getLogger('autotvm').addHandler(logging.StreamHandler(sys.stdout))
-    
-    # There are two steps for measuring a config: build and run.
-    # By default, we use all CPU cores to compile program. Then measure them sequentially.
-    # We measure 5 times and take average to reduce variance.
     measure_option = autotvm.measure_option(
         builder='local',
-        runner=autotvm.LocalRunner(number=3))
+        runner=autotvm.LocalRunner(number=3)) # 3 trials for every sample
     
-    # begin tuning, log records to file `matmul.log`
-    tuner = autotvm.tuner.GATuner(task)
+
+    tuner = autotvm.tuner.XGBTuner(task)
     tuner.tune(n_trial=config_sp_size,
                measure_option=measure_option,
                callbacks=[autotvm.callback.log_to_file('matmul.log')])
@@ -202,3 +160,36 @@ def auto_schedule(func, args):
             s, arg_bufs = autotvmFunc(*args)
             print(tvm.lower(s, arg_bufs, simple_mode=True))
             return s, arg_bufs
+
+def auto_schedule_conv(func, args):
+    config_sp_size = 200
+    autotvmFunc = CONVAutoTVM
+
+    task = autotvm.task.create(autotvmFunc, args=(args), target='llvm')
+    print(task.config_space)
+    
+    measure_option = autotvm.measure_option(
+        builder='local',
+        runner=autotvm.LocalRunner(number=3)) # 3 trials for every sample
+    
+
+    tuner = autotvm.tuner.XGBTuner(task)
+    tuner.tune(n_trial=config_sp_size,
+               measure_option=measure_option,
+               callbacks=[autotvm.callback.log_to_file('matmul.log')])
+    
+    with autotvm.apply_history_best('matmul.log'):
+        with tvm.target.create("llvm"):
+            s, arg_bufs = autotvmFunc(*args)
+            print(tvm.lower(s, arg_bufs, simple_mode=True))
+            return s, arg_bufs
+
+def auto_schedule(func, args):
+
+    global function
+    function = func
+
+    if len(args) == 4:
+        return auto_schedule_gemm(func, args)
+    else:
+        return auto_schedule_conv(func, args)
